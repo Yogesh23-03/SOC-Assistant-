@@ -208,7 +208,7 @@ def demo_full_attack_flow(db_path: str) -> bool:
         "alert_id": alert_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source_ip": source_ip,
-        "log_text": "POST /upload.php 200 — eval(base64_decode($_POST['c']))",
+        "log_text": "POST /upload.php 200 — cmd=whoami executed as www-data",
         "rule_name": "Web Shell Upload Detected",
         "host": "web-srv-01",
         "severity": "critical",

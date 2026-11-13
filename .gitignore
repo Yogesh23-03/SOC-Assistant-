@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 
 hermes-agent/
+
+# Local pstack skill installs (t3-pstack) - machine-only, never commit
+.agents/

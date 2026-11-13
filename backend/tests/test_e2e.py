@@ -213,7 +213,7 @@ def run_attack_pipeline(
         "alert_id": alert_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source_ip": source_ip,
-        "log_text": f"POST /upload.php 200 — eval(base64_decode($_POST['c'])) from {source_ip}",
+        "log_text": f"POST /upload.php 200 — cmd=whoami executed as www-data",
         "rule_name": "Web Shell Upload Detected",
         "host": "web-srv-01",
         "severity": "critical",

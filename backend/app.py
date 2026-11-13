@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.approval import process_analyst_decision
 from backend.audit import get_audit_entries, get_utc_timestamp, log_audit_event, verify_audit_chain
-from backend.config import CORS_ALLOWED_ORIGINS, JWT_EXPIRATION_MINUTES
+from backend.config import CORS_ALLOWED_ORIGIN_REGEX, CORS_ALLOWED_ORIGINS, JWT_EXPIRATION_MINUTES
 from backend.database import get_db, init_db
 from backend.executor import execute_approved_action, expire_active_blocks, list_active_blocks
 from backend.ingest import ingest_and_process_alert
@@ -102,6 +102,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=CORS_ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -180,7 +181,7 @@ async def ingest_sample_alert(index: int = 0):
         raise HTTPException(status_code=404, detail="sample_alerts.json not found")
 
     with open(sample_file, "r", encoding="utf-8") as f:
-        samples = json.load(f)
+        samples = json.load(f)["alerts"]
 
     if index < 0 or index >= len(samples):
         raise HTTPException(status_code=400, detail=f"Index {index} out of range (0-{len(samples)-1})")

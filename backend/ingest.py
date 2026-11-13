@@ -78,11 +78,12 @@ async def ingest_and_process_alert(
     # 3. Broadcast alert.new event to open extension panels
     alert_event_payload = {
         "alert_id": alert_id,
-        "rule_name": alert_dict.get("rule_name", ""),
-        "source_ip": alert_dict.get("source_ip", ""),
-        "host": alert_dict.get("host", ""),
-        "severity": alert_dict.get("severity", "medium"),
-        "timestamp": alert_dict.get("timestamp", ""),
+        "rule_name": alert_dict.get("rule_name") or "",
+        "source_ip": alert_dict.get("source_ip") or "",
+        "host": alert_dict.get("host") or "",
+        "severity": alert_dict.get("severity") or "medium",
+        "timestamp": alert_dict.get("timestamp") or "",
+        "log_text": alert_dict.get("log_text") or "",
     }
     await ws_manager.broadcast("alert.new", alert_event_payload, db_path=db_path)
 

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "SOC Assistant",
+  "description": "Review SOC alerts and authorize containment through your lab backend.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "permissions": ["sidePanel", "notifications", "alarms", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*", "https://soc-backend.lab.local/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Open SOC Assistant", "default_icon": "icon.png" },
+  "icons": { "128": "icon.png" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://soc-backend.lab.local wss://soc-backend.lab.local" }
+}

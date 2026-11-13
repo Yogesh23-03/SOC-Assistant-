@@ -32,9 +32,11 @@ CORS_ALLOWED_ORIGINS: List[str] = [
     "http://localhost:3000",
     "http://localhost:5173",  # Vite default dev server
     "http://127.0.0.1:5173",
-    "chrome-extension://*",   # Allows Chrome MV3 extension origin
     "https://soc-backend.lab.local",
 ]
+
+# Starlette matches origins by exact string, so extension origins need a regex.
+CORS_ALLOWED_ORIGIN_REGEX = r"chrome-extension://[a-p]{32}"
 
 # Safety & Timeout Defaults
 PROPOSAL_TIMEOUT_SECONDS = int(os.getenv("SOC_PROPOSAL_TIMEOUT_SECONDS", "300"))  # 5 min default expiry

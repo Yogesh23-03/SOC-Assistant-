@@ -122,7 +122,7 @@ class TestIngestion(unittest.TestCase):
             "alert_id": "ALERT-ATTACK-001",
             "timestamp": "2026-11-13T10:05:00Z",
             "source_ip": "198.51.100.23",
-            "log_text": "POST /upload.php 200 - eval(base64_decode($_POST['c']))",
+            "log_text": "POST /uploads/shell.php 200 431 - cmd=whoami executed as www-data",
             "rule_name": "Web Shell Upload",
             "host": "web-srv-01",
             "severity": "critical",
