@@ -1,0 +1,45 @@
+{
+  "description": "Triage result. `explanation` is the version a non-expert can read.",
+  "properties": {
+    "alert_id": {
+      "default": "",
+      "title": "Alert Id",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "explanation": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "label": {
+      "enum": [
+        "true_attack",
+        "suspicious",
+        "false_positive"
+      ],
+      "title": "Label",
+      "type": "string"
+    },
+    "reasoning": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reasoning",
+      "type": "string"
+    }
+  },
+  "required": [
+    "label",
+    "confidence",
+    "reasoning",
+    "explanation"
+  ],
+  "title": "TriageVerdict",
+  "type": "object"
+}

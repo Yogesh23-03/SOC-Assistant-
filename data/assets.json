@@ -1,0 +1,11 @@
+{
+  "web-01": {"owner": "payments-team", "os": "ubuntu-22.04", "criticality": "high", "exposure": "internet-facing"},
+  "web-02": {"owner": "payments-team", "os": "ubuntu-22.04", "criticality": "high", "exposure": "internet-facing"},
+  "db-01": {"owner": "data-platform", "os": "rhel-9", "criticality": "critical", "exposure": "internal-only"},
+  "dc-01": {"owner": "it-infra", "os": "windows-server-2022", "criticality": "critical", "exposure": "internal-only"},
+  "ws-101": {"owner": "finance", "os": "windows-11", "criticality": "medium", "exposure": "internal-only"},
+  "ws-102": {"owner": "engineering", "os": "windows-11", "criticality": "medium", "exposure": "internal-only"},
+  "mail-01": {"owner": "it-infra", "os": "ubuntu-22.04", "criticality": "high", "exposure": "internet-facing"},
+  "jump-01": {"owner": "it-infra", "os": "rhel-9", "criticality": "high", "exposure": "vpn-only"},
+  "backup-01": {"owner": "it-infra", "os": "rhel-9", "criticality": "high", "exposure": "internal-only"}
+}

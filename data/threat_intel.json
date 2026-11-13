@@ -1,0 +1,8 @@
+{
+  "203.0.113.66": {"verdict": "malicious", "score": 95, "source": "internal-ti-feed", "note": "AsyncRAT command-and-control"},
+  "45.155.205.233": {"verdict": "malicious", "score": 88, "source": "internal-ti-feed", "note": "SSH brute-force source, 3 prior incidents"},
+  "185.220.101.4": {"verdict": "suspicious", "score": 60, "source": "internal-ti-feed", "note": "TOR exit node, seen in staged payload hosting"},
+  "198.51.100.23": {"verdict": "unknown", "score": 40, "source": "internal-ti-feed", "note": "first seen this week, no prior reports"},
+  "10.0.0.5": {"verdict": "benign", "score": 0, "source": "asset-register", "note": "sanctioned vulnerability scanner"},
+  "dns-exfil.example": {"verdict": "malicious", "score": 90, "source": "internal-ti-feed", "note": "DNS tunnelling domain family"}
+}

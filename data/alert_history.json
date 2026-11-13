@@ -1,0 +1,8 @@
+[
+  {"alert_id": "A-0901", "timestamp": "2026-11-04T02:00:00Z", "host": "backup-01", "rule_name": "Backup job started", "severity": "low", "summary": "nightly backup started by svc-backup"},
+  {"alert_id": "A-0902", "timestamp": "2026-11-05T22:14:00Z", "host": "jump-01", "rule_name": "SSH failed logins", "severity": "medium", "summary": "14 failed SSH logins from 45.155.205.233"},
+  {"alert_id": "A-0903", "timestamp": "2026-11-06T09:31:00Z", "host": "ws-102", "rule_name": "EDR: LSASS access", "severity": "high", "summary": "taskmgr.exe read LSASS memory during an IT tooling rollout"},
+  {"alert_id": "A-0904", "timestamp": "2026-11-07T03:05:00Z", "host": "db-01", "rule_name": "Large outbound DNS", "severity": "medium", "summary": "DNS volume 40x baseline for 3 minutes, no follow-up activity"},
+  {"alert_id": "A-0905", "timestamp": "2026-11-08T11:20:00Z", "host": "web-01", "rule_name": "Web shell attempt", "severity": "high", "summary": "POST /uploads/shell.php from 198.51.100.23, request blocked by WAF"},
+  {"alert_id": "A-0906", "timestamp": "2026-11-09T18:47:00Z", "host": "mail-01", "rule_name": "Suspicious PowerShell", "severity": "medium", "summary": "encoded command executed by svc-mail during a mail-flow script"}
+]

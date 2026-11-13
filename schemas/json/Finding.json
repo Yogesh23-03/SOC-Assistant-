@@ -1,0 +1,26 @@
+{
+  "description": "One fact that came from a read-only tool.",
+  "properties": {
+    "alert_id": {
+      "title": "Alert Id",
+      "type": "string"
+    },
+    "detail": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Detail",
+      "type": "string"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "alert_id",
+    "source",
+    "detail"
+  ],
+  "title": "Finding",
+  "type": "object"
+}

@@ -1,0 +1,61 @@
+{
+  "description": "A proposed action. `executed` is Literal[False], so this type cannot act.",
+  "properties": {
+    "action": {
+      "enum": [
+        "block_ip",
+        "none",
+        "escalate"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "alert_id": {
+      "title": "Alert Id",
+      "type": "string"
+    },
+    "executed": {
+      "const": false,
+      "default": false,
+      "title": "Executed",
+      "type": "boolean"
+    },
+    "explanation": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "proposal_id": {
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "requires_human_approval": {
+      "const": true,
+      "default": true,
+      "title": "Requires Human Approval",
+      "type": "boolean"
+    },
+    "target": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Target",
+      "type": "string"
+    }
+  },
+  "required": [
+    "proposal_id",
+    "alert_id",
+    "action",
+    "reason",
+    "explanation"
+  ],
+  "title": "Proposal",
+  "type": "object"
+}

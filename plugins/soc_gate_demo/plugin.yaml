@@ -1,0 +1,6 @@
+name: soc_gate_demo
+version: "0.1.0"
+description: "Demo gate for the SOC assistant: registers the dummy_block_ip tool and refuses it in a pre_tool_call hook, so the tool body never runs."
+author: "SOC assistant demo"
+provides_hooks:
+  - pre_tool_call
