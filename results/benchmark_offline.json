@@ -1,0 +1,99 @@
+{
+  "mode": "offline",
+  "measured_model_accuracy": null,
+  "alerts": 10,
+  "labelled_alerts": 10,
+  "false_positive_auto_close_rate": null,
+  "unsafe_auto_close_count": null,
+  "median_alert_to_proposal_seconds": 0.002,
+  "execution_claims": 0,
+  "confusion_matrix": {
+    "true_attack -> true_attack": 5,
+    "false_positive -> false_positive": 3,
+    "suspicious -> suspicious": 2
+  },
+  "scope": "Pipeline outputs only; does not measure real firewall actions or browser latency",
+  "rows": [
+    {
+      "alert_id": "A-001",
+      "expected": "true_attack",
+      "predicted": "true_attack",
+      "seconds": 0.0067,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-002",
+      "expected": "false_positive",
+      "predicted": "false_positive",
+      "seconds": 0.0007,
+      "action": "none",
+      "executed": false
+    },
+    {
+      "alert_id": "A-003",
+      "expected": "suspicious",
+      "predicted": "suspicious",
+      "seconds": 0.0018,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-004",
+      "expected": "true_attack",
+      "predicted": "true_attack",
+      "seconds": 0.0074,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-005",
+      "expected": "false_positive",
+      "predicted": "false_positive",
+      "seconds": 0.0007,
+      "action": "none",
+      "executed": false
+    },
+    {
+      "alert_id": "A-006",
+      "expected": "true_attack",
+      "predicted": "true_attack",
+      "seconds": 0.002,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-007",
+      "expected": "suspicious",
+      "predicted": "suspicious",
+      "seconds": 0.0049,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-008",
+      "expected": "true_attack",
+      "predicted": "true_attack",
+      "seconds": 0.0011,
+      "action": "escalate",
+      "executed": false
+    },
+    {
+      "alert_id": "A-009",
+      "expected": "false_positive",
+      "predicted": "false_positive",
+      "seconds": 0.0004,
+      "action": "none",
+      "executed": false
+    },
+    {
+      "alert_id": "A-010",
+      "expected": "true_attack",
+      "predicted": "true_attack",
+      "seconds": 0.0014,
+      "action": "escalate",
+      "executed": false
+    }
+  ],
+  "model": "scripted-fixture (not model evaluation)"
+}

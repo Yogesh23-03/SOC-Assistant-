@@ -1,3 +1,21 @@
+# Secure setup
+
+Set private SOC_HMAC_SECRET and SOC_JWT_SECRET values in the repository .env
+before starting the backend. Missing secrets and legacy development defaults fail startup.
+Generate each with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+
+Provision an initial analyst session from a trusted server terminal:
+
+```bash
+python -c "from backend.security import create_analyst_token; print(create_analyst_token('analyst.demo'))"
+```
+
+Set TOKEN to that value. All /api routes require Authorization: Bearer $TOKEN.
+/auth/token only renews an authenticated session for the same analyst; an analyst
+name/password alone cannot create a session. WebSockets require the bearer header
+or /ws/analyst?token=<session-token>; use TLS and redact token query parameters in logs.
+The CLI executor requires access to the same proposal database as the backend.
+
 # Agentic SOC Assistant — M2 Backend Demo Runbook
 
 > **Role:** M2 (Shashank Patil — Backend & Security Lead)  
@@ -102,6 +120,7 @@ python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 
 ```bash
 curl -s -X POST http://localhost:8000/auth/token \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"analyst_id": "analyst-demo", "password": "soc-analyst-pass"}' | python -m json.tool
 ```
@@ -164,31 +183,31 @@ Response includes the `signed_token` with HMAC signature. Copy `signed_token` ob
 
 ---
 
-### 4e. Scenario 1 (continued) — Execute Containment Action
+### 4e. Execute Containment Action
+
+Save the exact `signed_token` object from the decision response to approval_token.json.
+The REST body is flat: do not wrap it in token_data or supply dry_run.
 
 ```bash
 curl -s -X POST http://localhost:8000/api/executor/apply \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "token_data": <PASTE_SIGNED_TOKEN_HERE>,
-    "dry_run": true
-  }' | python -m json.tool
+  --data-binary @approval_token.json
 ```
 
-**Expected response:**
-```json
-{
-  "status": "success",
-  "action": "block_ip",
-  "target": "198.51.100.42",
-  "blocked_at": "2026-11-13T...",
-  "expires_at": "2026-11-13T...",
-  "message": "[MOCK/DRY-RUN] iptables -A INPUT -s 198.51.100.42 -j DROP"
-}
+Linux with working sudo/iptables returns HTTP 200 and status success. Windows and
+other unsupported platforms return HTTP 503 with an unsupported platform error.
+A spent token returns HTTP 409; failed attempts also spend the token to prevent
+retries after an uncertain OS result. Investigate failures and approve a new proposal.
+
+For simulation only, on the same backend database:
+
+```bash
+python -m backend.cli_executor --file approval_token.json --dry-run
 ```
 
----
+Simulation returns status simulated, logs firewall.simulated, and does not create
+an active block or consume the executor token.
 
 ### 4f. Scenario 2 — Forged Token Rejection
 
@@ -199,7 +218,6 @@ curl -s -X POST http://localhost:8000/api/executor/apply \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "token_data": {
       "proposal_id": "prop-xxx",
       "action": "block_ip",
       "target": "198.51.100.42",
@@ -208,8 +226,6 @@ curl -s -X POST http://localhost:8000/api/executor/apply \
       "nonce": "demo-nonce-001-unique",
       "signature": "0ORGED_SIGNATURE_REPLACE_FIRST_CHAR_HERE",
       "issued_at": "2026-11-13T12:00:00+00:00"
-    },
-    "dry_run": true
   }' | python -m json.tool
 ```
 

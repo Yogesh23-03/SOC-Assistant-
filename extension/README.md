@@ -8,7 +8,7 @@ Chrome/Edge MV3 side panel for the existing M2 backend. Requires Chrome/Edge 120
 2. Enable **Developer mode**, choose **Load unpacked**, and select this folder's `dist` directory.
 3. Pin **SOC Assistant**, then click its toolbar icon to open the side panel.
 4. Open **Connection**, enter `http://localhost:8000`, and save.
-5. Enter an analyst ID and choose **Start lab session**. Start M2 separately with `python -m uvicorn backend.app:app --port 8000` in its configured Python environment.
+5. Run `python -m backend.manage analyst.demo` in the trusted backend terminal, paste its short-lived token in **Session token**, and choose **Start lab session**. Start M2 separately with `python -m uvicorn backend.app:app --port 8000` in its configured Python environment.
 
 The packaged `soc-assistant-extension.zip` contains the same build. Extract it before loading unpacked. This is a lab build, not a Web Store release.
 
@@ -38,11 +38,20 @@ For the loaded-extension browser test: run `npx playwright install chromium`, th
 
 ## Existing backend boundaries
 
-M2 `/auth/token` is lab authentication: it issues a token by analyst ID without verifying a password. Its WebSocket channel is unauthenticated. The extension uses the socket only as a sync signal and sends decisions through bearer-authenticated REST; backend hardening is still required before broader use.
+The backend requires bearer authentication. The extension verifies a provisioned
+session through `/api/session`; WebSockets carry it in a negotiated subprotocol,
+and SSE uses an Authorization header. No signing secrets or provider keys enter
+the extension. `/auth/token` renews an existing authenticated identity only.
 
-M2 approval returns a signed executor token. The extension deliberately discards it and never calls `/api/executor/apply`. Approval is displayed as authorization, not proof of execution. An operator handles execution through M2.
+Approval issues authorization. By default an operator executes through M2; a Linux
+target can explicitly enable SOC_EXECUTE_ON_APPROVAL=true. The extension never
+calls the executor and never treats approval alone as proof of execution.
 
-M2 currently treats `investigate_more` as rejection and does not restart the agents. Confirmation describes this behavior. The report screen is a cached case summary with text export; backend-generated PDF reports and SSE are not implemented. REST polling is the fallback when WebSockets fail.
+Investigate more now queues a durable backend job and obtains a fresh proposal.
+Failed jobs expose a retry action. Case history and evidence are restored from the
+backend on sync; reports include every stored investigation and decision. Full
+text and PDF downloads require the current session. SSE and polling supplement
+WebSocket reconnects. Dashboard counters come from `/api/metrics`.
 
 Only localhost HTTP and `https://soc-backend.lab.local` are permitted. For a different lab origin update `public/manifest.json` host permissions/CSP and `settingsSchema` together, rebuild and reload. Provider keys and signing secrets must never enter the extension.
 
@@ -56,4 +65,4 @@ Only localhost HTTP and `https://soc-backend.lab.local` are permitted. For a dif
 6. Include `<script>` and HTML in findings. They must appear literally and never execute.
 7. Load the package in Chrome and Edge and check at 360px and 480px panel widths.
 
-Automated checks cover replay, duplicates, canonical snapshots, expiry and backend URL restrictions. A loaded-extension Chromium test against an isolated HTTP test backend also verifies session setup, hostile evidence rendering, explicit confirmation and one authenticated decision. Real M2/VM integration and service-worker sleep recovery remain manual acceptance checks.
+Automated checks cover replay, duplicates, canonical snapshots, expiry and backend URL restrictions. A real-backend Chromium integration test covers authentication, WebSocket connection, stored hostile evidence, PDF download, reinvestigation and panel reload. A loaded-extension Chromium test against an isolated HTTP test backend also verifies session setup, hostile evidence rendering, explicit confirmation and one authenticated decision. Real M2/VM integration and service-worker sleep recovery remain manual acceptance checks.

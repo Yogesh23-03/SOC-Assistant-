@@ -95,19 +95,22 @@ class TestExecutor(unittest.TestCase):
         }
         token = generate_signed_approval_token(proposal, nonce="nonce-exec-01")
 
+        from backend.storage import save_proposal, update_proposal_status
+        save_proposal(proposal["proposal_id"], "alert", "block_ip", proposal["target"], "test",
+                      expires_at=proposal["expires_at"], db_path=self.db_path)
+        update_proposal_status(proposal["proposal_id"], "approved", "tester", db_path=self.db_path)
         result = execute_approved_action(token, dry_run=True, db_path=self.db_path)
-        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["status"], "simulated")
         self.assertEqual(result["target"], "198.51.100.99")
         self.assertEqual(result["action"], "block_ip")
 
         # Must be listed in active blocks
         active = list_active_blocks(db_path=self.db_path)
-        self.assertEqual(len(active), 1)
-        self.assertEqual(active[0]["target"], "198.51.100.99")
+        self.assertEqual(len(active), 0)
 
         # Must be recorded in tamper-evident audit log
         entries = get_audit_entries(db_path=self.db_path)
-        self.assertTrue(any(e["action"] == "firewall.rule_applied" for e in entries))
+        self.assertTrue(any(e["action"] == "firewall.simulated" for e in entries))
 
     # -------------------------------------------------------------------------
     # Proof-of-Skill: Core Failure Rejections
@@ -186,7 +189,9 @@ class TestExecutor(unittest.TestCase):
             )
 
         # Trigger rule expiration
-        expired_ips = expire_active_blocks(dry_run=True, db_path=self.db_path)
+        from unittest.mock import patch
+        with patch("backend.executor.remove_iptables_block", return_value=(True, "removed")):
+            expired_ips = expire_active_blocks(db_path=self.db_path)
         self.assertEqual(len(expired_ips), 1)
         self.assertEqual(expired_ips[0], "198.51.100.11")
 

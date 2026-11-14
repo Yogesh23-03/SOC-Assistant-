@@ -12,7 +12,9 @@ test('loaded extension replays hostile evidence and confirms an approval once', 
   const hostile = '<script>window.compromised=true</script>';
   const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    if (req.url === '/auth/token') res.end(JSON.stringify({ access_token: 'test-token', analyst_id: 'analyst.demo', expires_in_minutes: 60 }));
+    if (req.url === '/api/session') { expect(req.headers.authorization).toBe('Bearer test-session-token'); res.end(JSON.stringify({ analyst_id: 'analyst.demo', expires_at: Math.floor(Date.now() / 1000) + 3600 })); }
+    else if (req.url?.startsWith('/api/cases')) res.end('[]');
+    else if (req.url === '/api/metrics') res.end(JSON.stringify({ alerts_handled: 1, auto_closed_runs: 0, proposals: {} }));
     else if (req.url?.startsWith('/api/events')) {
       if (failSync) { res.statusCode = 503; res.end(JSON.stringify({ detail: 'Test outage' })); return; }
       const cursor = Number(new URL(req.url, 'http://localhost').searchParams.get('last_seen_event_id'));
@@ -25,7 +27,7 @@ test('loaded extension replays hostile evidence and confirms an approval once', 
     else if (req.url === '/api/decisions') {
       let body = ''; for await (const chunk of req) body += chunk;
       const data = JSON.parse(body);
-      expect(req.headers.authorization).toBe('Bearer test-token');
+      expect(req.headers.authorization).toBe('Bearer test-session-token');
       expect(data.nonce.length).toBeGreaterThan(8);
       decisions++; status = 'approved'; failSync = true; res.end(JSON.stringify({ proposal: proposal() }));
     } else { res.statusCode = 404; res.end('{}'); }
@@ -46,6 +48,7 @@ test('loaded extension replays hostile evidence and confirms an approval once', 
     await page.getByLabel('Backend URL').fill(`http://127.0.0.1:${address.port}`);
     await page.getByRole('button', { name: 'Save connection' }).click();
     await expect(page.getByRole('status')).toContainText('saved');
+    await page.getByLabel('Session token').fill('test-session-token');
     await page.getByRole('button', { name: 'Start lab session' }).click();
     await expect(page.getByText('Signed in as')).toBeVisible();
     await page.getByRole('button', { name: /Approvals/ }).click();

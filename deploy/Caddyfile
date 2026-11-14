@@ -1,0 +1,6 @@
+soc-backend.lab.local {
+    tls internal
+    reverse_proxy backend:8000 {
+        flush_interval -1
+    }
+}

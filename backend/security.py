@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import time
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -91,7 +92,9 @@ def verify_analyst_token(
     # Verify expiration
     payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
     now_epoch = int(time.time())
-    if payload.get("exp", 0) < now_epoch:
+    if not isinstance(payload, dict) or not isinstance(payload.get("exp"), (int, float)):
+        raise ValueError("Invalid token claims")
+    if payload["exp"] <= now_epoch:
         raise ValueError("Token has expired: session timed out")
 
     return payload
@@ -125,7 +128,7 @@ def verify_and_consume_nonce(
                 (nonce.strip(), proposal_id, now_ts)
             )
         return True
-    except Exception:
+    except sqlite3.IntegrityError:
         # SQLite PRIMARY KEY violation means nonce was already used
         return False
 
@@ -140,14 +143,15 @@ def compute_approval_signature(
     target: str,
     expires_at: str,
     nonce: str,
-    secret_key: Optional[str] = None
+    secret_key: Optional[str] = None,
+    ttl_seconds: int = 3600
 ) -> str:
     """
     Computes a deterministic HMAC-SHA256 signature for the approved firewall action.
-    Format string: {proposal_id}:{action}:{target}:{expires_at}:{nonce}
+    Format string: {proposal_id}:{action}:{target}:{expires_at}:{nonce}:{ttl_seconds}
     """
     secret_bytes = (secret_key or HMAC_SECRET_KEY).encode("utf-8")
-    canonical_payload = f"{proposal_id}:{action}:{target}:{expires_at}:{nonce}".encode("utf-8")
+    canonical_payload = f"{proposal_id}:{action}:{target}:{expires_at}:{nonce}:{ttl_seconds}".encode("utf-8")
     return hmac.new(secret_bytes, canonical_payload, hashlib.sha256).hexdigest()
 
 
@@ -172,7 +176,8 @@ def generate_signed_approval_token(
         target=target,
         expires_at=expires_at,
         nonce=nonce,
-        secret_key=secret_key
+        secret_key=secret_key,
+        ttl_seconds=ttl_seconds
     )
 
     return {
@@ -198,10 +203,13 @@ def verify_approval_token(
     Returns:
         (is_valid: bool, error_reason: Optional[str])
     """
-    required_fields = ["proposal_id", "action", "target", "expires_at", "nonce", "signature"]
+    required_fields = ["proposal_id", "action", "target", "expires_at", "nonce", "signature", "ttl_seconds"]
     for field in required_fields:
         if field not in token_data:
             return False, f"Missing required token field: '{field}'"
+
+    if type(token_data["ttl_seconds"]) is not int or token_data["ttl_seconds"] <= 0:
+        return False, "Invalid ttl_seconds"
 
     # 1. Check expiration
     now_ts = get_utc_timestamp()
@@ -215,7 +223,8 @@ def verify_approval_token(
         target=token_data["target"],
         expires_at=token_data["expires_at"],
         nonce=token_data["nonce"],
-        secret_key=secret_key
+        secret_key=secret_key,
+        ttl_seconds=token_data["ttl_seconds"]
     )
 
     if not hmac.compare_digest(expected_sig, token_data["signature"]):

@@ -26,9 +26,12 @@ class ConnectionManager:
         # Set of active WebSocket connections
         self.active_connections: Set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, subprotocol: Optional[str] = None) -> None:
         """Accepts and registers a new WebSocket connection."""
-        await websocket.accept()
+        if subprotocol:
+            await websocket.accept(subprotocol=subprotocol)
+        else:
+            await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Extension connected. Total active connections: {len(self.active_connections)}")
 

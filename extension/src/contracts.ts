@@ -4,7 +4,7 @@ export const findingSchema = z.object({ alert_id: z.string(), source: z.string()
 export const proposalSchema = z.object({
   proposal_id: z.string(), alert_id: z.string(), action: z.enum(['block_ip', 'escalate', 'none']),
   target: z.string(), reason: z.string(), explanation: z.string().nullable().optional(),
-  status: z.enum(['pending', 'approved', 'rejected', 'expired']), confidence: z.number().min(0).max(1),
+  status: z.enum(['pending', 'approved', 'rejected', 'expired', 'investigating']), confidence: z.number().min(0).max(1),
   ttl_seconds: z.number().int().positive(), created_at: z.string().datetime({ offset: true }),
   expires_at: z.string().datetime({ offset: true }), decision_by: z.string().nullable().optional(), decision_at: z.string().nullable().optional(),
 });
@@ -19,6 +19,7 @@ export const caseSchema = z.object({
   timestamp: z.string().nullish().transform(v => v ?? ''), log_text: z.string().nullish().transform(v => v ?? ''),
   verdict: z.object({ label: z.string(), confidence: z.number(), reasoning: z.string().default('') }).optional(),
   findings: z.array(findingSchema).default([]), closed: z.boolean().default(false),
+  report_ready: z.boolean().default(false), investigating: z.boolean().default(false), review_failed: z.boolean().default(false),
 });
 export type Case = z.infer<typeof caseSchema>;
 export const settingsSchema = z.object({
@@ -36,8 +37,10 @@ export type Decision = z.infer<typeof decisionSchema>;
 export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('state') }),
   z.object({ type: z.literal('sync') }),
-  z.object({ type: z.literal('login'), analyst_id: z.string().trim().min(2).max(64) }),
+  z.object({ type: z.literal('login'), access_token: z.string().trim().min(16) }),
   z.object({ type: z.literal('logout') }),
+  z.object({ type: z.literal('report'), alert_id: z.string(), format: z.enum(['text', 'pdf']) }),
+  z.object({ type: z.literal('retry_review'), proposal_id: z.string() }),
   z.object({ type: z.literal('settings'), settings: settingsSchema }),
   z.object({ type: z.literal('decision'), proposal_id: z.string(), decision: decisionSchema }),
 ]);
@@ -49,10 +52,11 @@ export const stateSchema = z.object({
   connection: z.enum(['signed_out', 'connecting', 'live', 'polling', 'offline']),
   last_sync: z.string().nullable(), error: z.string().nullable(),
   settings: settingsSchema, analyst: z.string().nullable(),
+  metrics: z.object({ alerts_handled: z.number(), auto_closed_runs: z.number(), proposals: z.record(z.string(), z.number()) }).optional(),
 });
 export type State = z.infer<typeof stateSchema>;
 export const replySchema = z.discriminatedUnion('ok', [
-  z.object({ ok: z.literal(true), state: stateSchema }),
+  z.object({ ok: z.literal(true), state: stateSchema, report: z.object({ content: z.string(), format: z.enum(['text', 'pdf']) }).optional() }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]);
 export const emptyState = (): State => ({

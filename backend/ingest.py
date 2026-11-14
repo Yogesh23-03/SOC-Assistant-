@@ -11,6 +11,8 @@ Key Capabilities:
 """
 
 import logging
+import asyncio
+from uuid import uuid4
 import sys
 from types import ModuleType
 from typing import Any, Dict, Optional
@@ -34,6 +36,8 @@ from schemas.models import Alert
 
 from backend.audit import log_audit_event
 from backend.storage import save_proposal
+from backend.cases import start_run, finish_run, fail_run, observe_tool
+from agents.investigation import tool_context
 from backend.websocket_manager import ws_manager
 
 logger = logging.getLogger("soc_backend.ingest")
@@ -42,7 +46,8 @@ logger = logging.getLogger("soc_backend.ingest")
 async def ingest_and_process_alert(
     alert_payload: Dict[str, Any],
     llm: Optional[LLM] = None,
-    db_path: Optional[str] = None
+    db_path: Optional[str] = None,
+    offload: bool = False
 ) -> Dict[str, Any]:
     """
     Ingests an alert from SIEM / webhook / simulator and executes the agentic pipeline.
@@ -59,7 +64,9 @@ async def ingest_and_process_alert(
         logger.warning(f"Malformed alert rejected by schema: {exc}")
         alert_dict = alert_payload
 
-    alert_id = str(alert_dict.get("alert_id") or "UNKNOWN-ALERT")
+    alert_id = str(alert_dict.get("alert_id") or "invalid-" + uuid4().hex[:12])
+    alert_dict = dict(alert_dict, alert_id=alert_id)
+    run_id = start_run(alert_dict, db_path)
 
     # 2. Record alert arrival in audit ledger
     log_audit_event(
@@ -88,7 +95,25 @@ async def ingest_and_process_alert(
     await ws_manager.broadcast("alert.new", alert_event_payload, db_path=db_path)
 
     # 4. Execute M1 Agent Pipeline (Triage -> Investigation -> Response)
-    pipeline_result = run_pipeline(alert_dict, llm=llm)
+    def analyze():
+        from backend.providers import tool_runner
+        with tool_context(
+            observer=lambda name, args, result: observe_tool(run_id, alert_id, name, args, result, db_path),
+            runner=lambda name, ip: tool_runner(name, ip, db_path),
+        ):
+            return run_pipeline(alert_dict, llm=llm)
+
+    try:
+        pipeline_result = await asyncio.to_thread(analyze) if offload else analyze()
+    except Exception:
+        fail_run(run_id, db_path)
+        raise
+
+    async def completed(result):
+        finish_run(run_id, result, db_path)
+        await ws_manager.broadcast("report.ready", {"alert_id": alert_id, "report_url": f"/api/cases/{alert_id}/report"}, db_path=db_path)
+        return result
+
 
     verdict = pipeline_result.get("verdict") or {}
     findings = pipeline_result.get("findings") or []
@@ -123,14 +148,14 @@ async def ingest_and_process_alert(
         }
         await ws_manager.broadcast("case.closed", closed_event, db_path=db_path)
 
-        return {
+        return await completed({
             "status": "auto_closed",
             "alert_id": alert_id,
             "verdict": verdict,
             "findings": [],
             "proposal": None,
             "message": "Alert auto-closed with logged reason. Human was not disturbed."
-        }
+        })
 
     # -------------------------------------------------------------------------
     # Scenario A: True Attack / Suspicious (Human Approval Required)
@@ -193,21 +218,21 @@ async def ingest_and_process_alert(
         }
         await ws_manager.broadcast("proposal.pending", pending_event, db_path=db_path)
 
-        return {
+        return await completed({
             "status": "pending_approval",
             "alert_id": alert_id,
             "verdict": verdict,
             "findings": findings,
             "proposal": saved_prop,
             "message": "Attack analyzed. Proposal queued in extension awaiting human decision."
-        }
+        })
 
     # Fallback when action is 'none'
-    return {
+    return await completed({
         "status": "no_action_required",
         "alert_id": alert_id,
         "verdict": verdict,
         "findings": findings,
         "proposal": None,
         "message": "Analysis completed. No containment action needed."
-    }
+    })

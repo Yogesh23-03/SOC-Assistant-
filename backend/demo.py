@@ -258,9 +258,9 @@ def demo_full_attack_flow(db_path: str) -> bool:
     global_rate_limiter.reset()   # ensure rate limit is clean
     signed_token = decision_result["signed_token"]
     exec_result = execute_approved_action(signed_token, dry_run=True, db_path=db_path)
-    ok_stage4 = exec_result["status"] == "success"
-    result("Firewall rule applied (dry-run)", ok_stage4,
-           f"target={exec_result['target']}  expires_at={exec_result['expires_at'][:19]}")
+    ok_stage4 = exec_result["status"] == "simulated"
+    result("Firewall rule simulated (no active block)", ok_stage4,
+           f"target={exec_result['target']}  status={exec_result['status']}")
 
     # --- Stage 5: Audit chain integrity ---
     step("Verifying hash-chained audit log integrity")

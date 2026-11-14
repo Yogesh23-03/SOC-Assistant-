@@ -28,6 +28,14 @@ from backend.security import verify_approval_token
 logger = logging.getLogger("soc_backend.executor")
 
 
+class RateLimitError(RuntimeError):
+    pass
+
+
+class TokenReplayError(RuntimeError):
+    pass
+
+
 class RateLimiter:
     """
     Sliding-window rate limiter.
@@ -81,13 +89,15 @@ def validate_ipv4_target(target: str) -> Tuple[bool, Optional[str]]:
 def run_iptables_command(args: List[str], dry_run: bool = False) -> Tuple[int, str, str]:
     """
     Runs an iptables command safely.
-    On non-Linux platforms (Windows dev machines) or when dry_run=True,
-    simulates the command successfully to enable testing without sudo.
+    Only explicit dry_run simulates commands; real execution requires Linux.
     """
     cmd = ["iptables"] + args
     is_linux = platform.system().lower() == "linux"
 
-    if dry_run or not is_linux:
+    if not dry_run and not is_linux:
+        return 1, "", "Unsupported platform: real firewall execution requires Linux"
+
+    if dry_run:
         mock_output = f"[MOCK/DRY-RUN] {' '.join(cmd)}"
         logger.info(mock_output)
         return 0, mock_output, ""
@@ -189,6 +199,7 @@ def expire_active_blocks(dry_run: bool = False, db_path: Optional[str] = None) -
     """
     now_ts = get_utc_timestamp()
     expired_targets: List[str] = []
+    completed_rows = []
 
     with get_db(db_path) as conn:
         cursor = conn.execute(
@@ -204,7 +215,11 @@ def expire_active_blocks(dry_run: bool = False, db_path: Optional[str] = None) -
         for row in overdue_rows:
             target_ip = row["target"]
             # Remove from firewall
-            remove_iptables_block(target_ip, dry_run=dry_run)
+            success, message = remove_iptables_block(target_ip, dry_run=dry_run)
+            if not success or dry_run:
+                logger.warning("Rule removal not committed for %s: %s", target_ip, message)
+                continue
+            completed_rows.append(row)
 
             # Update DB status
             conn.execute(
@@ -213,7 +228,7 @@ def expire_active_blocks(dry_run: bool = False, db_path: Optional[str] = None) -
             )
 
     # Record in audit log after committing the update transaction
-    for row in overdue_rows:
+    for row in completed_rows:
         target_ip = row["target"]
         log_audit_event(
             actor="executor.reaper",
@@ -290,6 +305,20 @@ def execute_approved_action(
         )
         raise PermissionError(f"Safety invariant violated: Target '{target}' is on the protected allowlist and can NEVER be blocked.")
 
+    # Commit a reservation before the OS operation: uncertain execution fails closed.
+    with get_db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        execution_nonce = "executor:" + token_data["signature"]
+        if conn.execute("SELECT 1 FROM used_nonces WHERE nonce = ?", (execution_nonce,)).fetchone():
+            raise TokenReplayError("Executor token already spent")
+        proposal = conn.execute("SELECT * FROM proposals WHERE proposal_id = ?", (proposal_id,)).fetchone()
+        if not proposal or proposal["status"] != "approved":
+            raise PermissionError("Proposal must still be approved at execution time")
+        if any(proposal[field] != token_data[field] for field in ("action", "target", "ttl_seconds", "expires_at")):
+            raise PermissionError("Token does not match the approved proposal")
+        if not dry_run:
+            conn.execute("INSERT INTO used_nonces (nonce, proposal_id, used_at) VALUES (?, ?, ?)",
+                         (execution_nonce, proposal_id, get_utc_timestamp()))
     # 5. Verification 5: Sliding-Window Rate Limiting
     rate_ok, rate_err = global_rate_limiter.allow_request()
     if not rate_ok:
@@ -299,26 +328,18 @@ def execute_approved_action(
             details={"target": target, "error": rate_err},
             db_path=db_path
         )
-        raise RuntimeError(rate_err)
+        raise RateLimitError(rate_err)
 
-    # 6. Apply Firewall Rule
     success, msg = apply_iptables_block(target, dry_run=dry_run)
     if not success:
-        log_audit_event(
-            actor="executor",
-            action="executor.iptables_failure",
-            details={"target": target, "error": msg},
-            db_path=db_path
-        )
+        log_audit_event(actor="executor", action="executor.iptables_failure",
+                        details={"target": target, "error": msg}, db_path=db_path)
         raise RuntimeError(f"Firewall execution failed: {msg}")
-
-    # 7. Record Active Block in SQLite with TTL
-    block_record = record_active_block(
-        target=target,
-        proposal_id=proposal_id,
-        ttl_seconds=ttl_seconds,
-        db_path=db_path
-    )
+    if dry_run:
+        log_audit_event(actor="executor", action="firewall.simulated",
+                        details={"proposal_id": proposal_id, "target": target}, db_path=db_path)
+        return {"status": "simulated", "action": action, "target": target, "proposal_id": proposal_id}
+    block_record = record_active_block(target, proposal_id, ttl_seconds, db_path)
 
     # 8. Record in Tamper-Evident Audit Ledger
     log_audit_event(

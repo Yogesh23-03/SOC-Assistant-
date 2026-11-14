@@ -32,9 +32,9 @@ def save_proposal(
     """
     now_ts = get_utc_timestamp()
     if not expires_at:
-        # Default 5-minute expiry if not specified
+        # Use the requested proposal lifetime
         now_dt = datetime.fromisoformat(now_ts)
-        expires_at = datetime.fromtimestamp(now_dt.timestamp() + 300, timezone.utc).isoformat()
+        expires_at = datetime.fromtimestamp(now_dt.timestamp() + ttl_seconds, timezone.utc).isoformat()
 
     with get_db(db_path) as conn:
         conn.execute(

@@ -1,3 +1,21 @@
+# Run the complete SOC Assistant
+
+The backend and extension now support authenticated sessions, stored case evidence,
+queued reinvestigation, PDF reports, event replay and periodic firewall cleanup.
+Read [SETUP_AND_HANDOFF.md](docs/SETUP_AND_HANDOFF.md) for the current startup steps,
+optional Linux execution, evaluation and remaining manual acceptance work.
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app:app --reload
+# Second terminal; paste this short-lived token into the extension Connection screen:
+.\.venv\Scripts\python.exe -m backend.manage analyst.demo
+```
+
+Load `extension/dist` in Chrome/Edge after building with `npm.cmd run package`.
+Never copy provider keys or signing secrets into the browser. No firewall rule is
+applied by default; real execution requires explicit Linux-target configuration.
+The original M1 implementation notes follow and describe the agent layer only.
+
 # Agentic SOC Assistant — M1 (the agents)
 
 Three agents that read one SIEM alert and produce a triage verdict, an investigation
