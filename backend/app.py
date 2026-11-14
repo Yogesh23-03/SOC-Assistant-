@@ -5,18 +5,25 @@ pending proposals queue, and event stream synchronization.
 """
 
 import json
+import asyncio
+import os
+from contextlib import suppress
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, StreamingResponse
+from backend.cases import get_case, list_cases, metrics
+from backend.reports import report_text, render_pdf
+from backend.maintenance import maintenance_loop, recover_jobs
 
 from backend.approval import process_analyst_decision
 from backend.audit import get_audit_entries, get_utc_timestamp, log_audit_event, verify_audit_chain
 from backend.config import CORS_ALLOWED_ORIGIN_REGEX, CORS_ALLOWED_ORIGINS, JWT_EXPIRATION_MINUTES
 from backend.database import get_db, init_db
-from backend.executor import execute_approved_action, expire_active_blocks, list_active_blocks
+from backend.executor import RateLimitError, TokenReplayError, execute_approved_action, expire_active_blocks, list_active_blocks
 from backend.ingest import ingest_and_process_alert
 from backend.schemas import (
     AuditEntryResponse,
@@ -49,8 +56,7 @@ def get_current_analyst(authorization: Optional[str] = Header(None)) -> str:
     Accepts: 'Authorization: Bearer <token>'
     """
     if not authorization:
-        # Default fallback for testing and dev environments if header omitted
-        return "analyst.default"
+        raise HTTPException(status_code=401, detail="Bearer token required")
 
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
@@ -61,8 +67,11 @@ def get_current_analyst(authorization: Optional[str] = Header(None)) -> str:
 
     try:
         payload = verify_analyst_token(parts[1])
-        return payload.get("sub", "analyst.unknown")
-    except ValueError as err:
+        analyst = payload.get("sub")
+        if not isinstance(analyst, str) or not analyst.strip():
+            raise ValueError("Invalid analyst identity")
+        return analyst
+    except (ValueError, TypeError, KeyError) as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(err)
@@ -84,8 +93,14 @@ async def lifespan(app: FastAPI):
         action="service.started",
         details={"version": "0.1.0", "status": "ready"}
     )
-    yield
-    # Shutdown logic (if any) can be placed here
+    recover_jobs()
+    maintenance = asyncio.create_task(maintenance_loop())
+    try:
+        yield
+    finally:
+        maintenance.cancel()
+        with suppress(asyncio.CancelledError):
+            await maintenance
 
 
 app = FastAPI(
@@ -152,6 +167,7 @@ def check_health():
 # -----------------------------------------------------------------------------
 @app.post(
     "/api/alerts",
+    dependencies=[Depends(get_current_analyst)],
     summary="Ingest SIEM Alert & Trigger Agent Pipeline",
     tags=["Alert Ingestion"]
 )
@@ -160,11 +176,12 @@ async def ingest_alert(alert: Dict[str, Any]):
     Ingests a security alert into the multi-agent pipeline.
     Auto-closes false positives; investigates attacks and queues proposals for approval.
     """
-    return await ingest_and_process_alert(alert)
+    return await ingest_and_process_alert(alert, offload=True)
 
 
 @app.post(
     "/api/alerts/sample/{index}",
+    dependencies=[Depends(get_current_analyst)],
     summary="Trigger Pipeline on Sample Alert (Demo Helper)",
     tags=["Alert Ingestion"]
 )
@@ -186,7 +203,7 @@ async def ingest_sample_alert(index: int = 0):
     if index < 0 or index >= len(samples):
         raise HTTPException(status_code=400, detail=f"Index {index} out of range (0-{len(samples)-1})")
 
-    return await ingest_and_process_alert(samples[index])
+    return await ingest_and_process_alert(samples[index], offload=True)
 
 
 # -----------------------------------------------------------------------------
@@ -194,6 +211,7 @@ async def ingest_sample_alert(index: int = 0):
 # -----------------------------------------------------------------------------
 @app.get(
     "/api/audit",
+    dependencies=[Depends(get_current_analyst)],
     response_model=List[AuditEntryResponse],
     summary="Retrieve Append-Only Audit Entries",
     tags=["Audit Log"]
@@ -210,6 +228,7 @@ def read_audit_log(
 
 @app.get(
     "/api/audit/verify",
+    dependencies=[Depends(get_current_analyst)],
     response_model=AuditVerifyResponse,
     summary="Verify Cryptographic Hash-Chain Integrity",
     tags=["Audit Log"]
@@ -232,6 +251,7 @@ def verify_audit():
 # -----------------------------------------------------------------------------
 @app.get(
     "/api/proposals/pending",
+    dependencies=[Depends(get_current_analyst)],
     response_model=List[ProposalResponse],
     summary="List Active Pending Proposals",
     tags=["Proposals"]
@@ -246,6 +266,7 @@ def list_pending_proposals():
 
 @app.get(
     "/api/proposals/{proposal_id}",
+    dependencies=[Depends(get_current_analyst)],
     response_model=ProposalResponse,
     summary="Get Proposal Details by ID",
     tags=["Proposals"]
@@ -265,6 +286,7 @@ def get_single_proposal(proposal_id: str):
 
 @app.post(
     "/api/proposals",
+    dependencies=[Depends(get_current_analyst)],
     response_model=ProposalResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a Newly Generated Proposal",
@@ -321,12 +343,14 @@ async def create_proposal(req: ProposalCreateRequest):
     summary="Issue Analyst Bearer Token",
     tags=["Authentication"]
 )
-def login_analyst(req: LoginRequest):
+def login_analyst(req: LoginRequest, analyst_id: str = Depends(get_current_analyst)):
     """
     Authenticates a SOC analyst and issues a short-lived bearer session token.
     Stored only in the Chrome extension's in-memory session (no secrets on disk).
     """
-    token = create_analyst_token(analyst_id=req.analyst_id)
+    if req.analyst_id != analyst_id:
+        raise HTTPException(status_code=403, detail="Cannot issue token for another analyst")
+    token = create_analyst_token(analyst_id=analyst_id)
     log_audit_event(
         actor=req.analyst_id,
         action="analyst.authenticated",
@@ -345,6 +369,7 @@ def login_analyst(req: LoginRequest):
 # -----------------------------------------------------------------------------
 @app.post(
     "/api/decisions",
+    dependencies=[Depends(get_current_analyst)],
     response_model=DecisionResponse,
     summary="Submit Human Approval Decision",
     tags=["Approval Gate"]
@@ -370,10 +395,22 @@ async def submit_decision(
         nonce=req.nonce
     )
 
-    # Real-time WebSocket push of status change to all open extension cards
-    await ws_manager.broadcast("proposal.updated", result["proposal"])
+    await publish_decision(result)
 
     return result
+
+
+async def publish_decision(result):
+    if result.get("signed_token") and os.getenv("SOC_EXECUTE_ON_APPROVAL", "false").lower() == "true":
+        try:
+            execution = await asyncio.to_thread(execute_approved_action, result["signed_token"])
+            await ws_manager.broadcast("firewall.blocked", execution)
+        except (RuntimeError, PermissionError, ValueError):
+            logger.exception("Approved containment could not execute; inspect executor audit entries")
+            await ws_manager.broadcast("firewall.failed", {"proposal_id": result["proposal_id"]})
+
+    await ws_manager.broadcast("proposal.updated", result["proposal"])
+
 
 
 # -----------------------------------------------------------------------------
@@ -381,6 +418,7 @@ async def submit_decision(
 # -----------------------------------------------------------------------------
 @app.post(
     "/api/executor/apply",
+    dependencies=[Depends(get_current_analyst)],
     summary="Execute Approved Containment Action with Signed Token",
     tags=["Executor"]
 )
@@ -397,12 +435,17 @@ async def apply_containment_action(token: SignedApprovalTokenSchema):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(perm_err))
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
-    except RuntimeError as run_err:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(run_err))
+    except TokenReplayError as err:
+        raise HTTPException(status_code=409, detail=str(err))
+    except RateLimitError as err:
+        raise HTTPException(status_code=429, detail=str(err))
+    except RuntimeError as err:
+        raise HTTPException(status_code=503, detail=str(err))
 
 
 @app.get(
     "/api/executor/blocks",
+    dependencies=[Depends(get_current_analyst)],
     summary="List Active Firewall Blocks",
     tags=["Executor"]
 )
@@ -413,6 +456,7 @@ def get_active_blocks():
 
 @app.post(
     "/api/executor/expire",
+    dependencies=[Depends(get_current_analyst)],
     summary="Expire and Cleanup Overdue Firewall Rules",
     tags=["Executor"]
 )
@@ -428,6 +472,7 @@ def run_rule_expiration():
 # -----------------------------------------------------------------------------
 @app.get(
     "/api/events",
+    dependencies=[Depends(get_current_analyst)],
     response_model=EventsSyncResponse,
     summary="Replay Missed Events (sync.request)",
     tags=["Events"]
@@ -459,10 +504,26 @@ async def websocket_analyst_endpoint(websocket: WebSocket):
     2. Periodic ping/heartbeat keepalive to keep MV3 background service workers awake.
     3. sync.request event replay when extension wakes up from idle sleep or network loss.
     """
-    await ws_manager.connect(websocket)
+    try:
+        authorization = websocket.headers.get("authorization")
+        auth_protocol = next((p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",") if p.strip().startswith("soc.auth.")), None)
+        if not authorization and auth_protocol:
+            authorization = "Bearer " + auth_protocol[len("soc.auth."):]
+        if not authorization and websocket.query_params.get("token"):
+            authorization = "Bearer " + websocket.query_params["token"]
+        analyst_id = get_current_analyst(authorization)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    await ws_manager.connect(websocket, subprotocol=auth_protocol)
     try:
         while True:
             raw_text = await websocket.receive_text()
+            try:
+                get_current_analyst(authorization)
+            except HTTPException:
+                await websocket.close(code=1008)
+                return
             try:
                 message = json.loads(raw_text)
             except Exception:
@@ -472,6 +533,8 @@ async def websocket_analyst_endpoint(websocket: WebSocket):
                 )
                 continue
 
+            if not isinstance(message, dict):
+                continue
             msg_type = message.get("type", "")
 
             # 1. Keepalive ping / heartbeat from extension
@@ -491,7 +554,9 @@ async def websocket_analyst_endpoint(websocket: WebSocket):
                 try:
                     p_id = message.get("proposal_id", "")
                     dec = message.get("decision", "")
-                    a_id = message.get("analyst_id", "analyst.ws")
+                    a_id = message.get("analyst_id", analyst_id)
+                    if a_id != analyst_id:
+                        raise HTTPException(status_code=403, detail="Analyst identity mismatch")
                     nonce = message.get("nonce", "")
                     res = process_analyst_decision(
                         proposal_id=p_id,
@@ -499,7 +564,7 @@ async def websocket_analyst_endpoint(websocket: WebSocket):
                         analyst_id=a_id,
                         nonce=nonce
                     )
-                    await ws_manager.broadcast("proposal.updated", res["proposal"])
+                    await publish_decision(res)
                     await ws_manager.send_personal_message(
                         {"type": "decision.result", "data": res},
                         websocket
@@ -522,7 +587,70 @@ async def websocket_analyst_endpoint(websocket: WebSocket):
     except Exception as exc:
         logger.warning(f"Unexpected WebSocket closure: {exc}")
         await ws_manager.disconnect(websocket)
+    finally:
+        await ws_manager.disconnect(websocket)
 
+
+
+@app.get("/api/session", dependencies=[Depends(get_current_analyst)])
+def session_info(authorization: str = Header(...)):
+    payload = verify_analyst_token(authorization.split()[1])
+    return {"analyst_id": payload["sub"], "expires_at": payload["exp"]}
+
+
+@app.get("/api/cases", dependencies=[Depends(get_current_analyst)])
+def case_list(limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+    return list_cases(limit, offset)
+
+
+@app.get("/api/cases/{alert_id}", dependencies=[Depends(get_current_analyst)])
+def case_detail(alert_id: str):
+    case = get_case(alert_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@app.get("/api/cases/{alert_id}/report", dependencies=[Depends(get_current_analyst)])
+def case_report(alert_id: str, format: str = Query("text", pattern="^(text|pdf)$")):
+    text = report_text(case_detail(alert_id))
+    if format == "pdf":
+        return Response(render_pdf(text), media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="soc-investigation.pdf"'})
+    return Response(text, media_type="text/plain", headers={"X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/metrics", dependencies=[Depends(get_current_analyst)])
+def dashboard_metrics():
+    return metrics()
+
+
+@app.post("/api/proposals/{proposal_id}/review/retry", dependencies=[Depends(get_current_analyst)])
+def retry_review(proposal_id: str, analyst_id: str = Depends(get_current_analyst)):
+    with get_db() as conn:
+        changed = conn.execute("UPDATE investigation_jobs SET status='queued', error=NULL, finished_at=NULL, analyst_id=? WHERE proposal_id=? AND status='failed'", (analyst_id, proposal_id))
+        if changed.rowcount != 1:
+            raise HTTPException(status_code=409, detail="No failed review to retry")
+    log_audit_event(analyst_id, "investigation.retry_requested", {"proposal_id": proposal_id})
+    return {"status": "queued"}
+
+
+@app.get("/api/events/stream", dependencies=[Depends(get_current_analyst)])
+async def stream_events(request: Request, last_seen_event_id: int = Query(0, ge=0), authorization: str = Header(...)):
+    async def generate():
+        cursor = last_seen_event_id
+        while not await request.is_disconnected():
+            try:
+                get_current_analyst(authorization)
+            except HTTPException:
+                return
+            events = get_events_since(cursor, limit=500)
+            for event in events:
+                cursor = event["event_id"]
+                yield f"id: {cursor}\ndata: {json.dumps(event)}\n\n"
+            if not events:
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(15)
+    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 if __name__ == "__main__":

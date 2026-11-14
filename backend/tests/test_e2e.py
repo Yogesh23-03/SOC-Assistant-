@@ -292,7 +292,7 @@ class TestEndToEnd(unittest.TestCase):
             dry_run=True,
             db_path=self.db_path,
         )
-        self.assertEqual(exec_result["status"], "success")
+        self.assertEqual(exec_result["status"], "simulated")
         self.assertEqual(exec_result["target"], source_ip)
 
         # 4. Verify audit trail completeness — all 4 critical events must be present
@@ -304,7 +304,7 @@ class TestEndToEnd(unittest.TestCase):
                       "Audit log must record investigation completion")
         self.assertIn("proposal.approved", actions,
                       "Audit log must record analyst approval")
-        self.assertIn("firewall.rule_applied", actions,
+        self.assertIn("firewall.simulated", actions,
                       "Audit log must record firewall rule application")
 
     # =========================================================================

@@ -17,6 +17,9 @@ from backend.audit import log_audit_event
 from backend.config import PROTECTED_ALLOWLIST
 from backend.security import generate_signed_approval_token, verify_and_consume_nonce
 from backend.storage import get_proposal, update_proposal_status
+from backend.database import get_db
+from backend.audit import get_utc_timestamp
+from backend.cases import get_case
 
 
 def process_analyst_decision(
@@ -99,14 +102,26 @@ def process_analyst_decision(
             detail=f"Safety violation: Target '{target_ip}' is in the protected allowlist and cannot be blocked"
         )
 
+    if decision_clean == "investigate_more" and not get_case(proposal["alert_id"], db_path):
+        raise HTTPException(status_code=409, detail="Original alert is unavailable; ingest the alert before requesting more investigation")
+
+    # Compare-and-swap under a write transaction: concurrent analysts cannot both
+    # authorize the same pending proposal. A queued review is durable across restart.
+    next_status = "approved" if decision_clean == "approve" else "investigating" if decision_clean == "investigate_more" else "rejected"
+    with get_db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        changed = conn.execute(
+            "UPDATE proposals SET status=?, decision_by=?, decision_at=? WHERE proposal_id=? AND status='pending' AND expires_at>?",
+            (next_status, analyst_id, get_utc_timestamp(), proposal_id, get_utc_timestamp()))
+        if changed.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Proposal changed or expired; refresh before deciding")
+        if decision_clean == "investigate_more":
+            conn.execute("INSERT INTO investigation_jobs (proposal_id, alert_id, analyst_id, created_at) VALUES (?, ?, ?, ?)",
+                         (proposal_id, proposal["alert_id"], analyst_id, get_utc_timestamp()))
+
     # 5. Handle Approval
     if decision_clean == "approve":
-        updated = update_proposal_status(
-            proposal_id=proposal_id,
-            new_status="approved",
-            decision_by=analyst_id,
-            db_path=db_path
-        )
+        updated = get_proposal(proposal_id, db_path)
 
         # Generate cryptographic HMAC signed token for executor
         signed_token = generate_signed_approval_token(
@@ -136,13 +151,7 @@ def process_analyst_decision(
 
     # 6. Handle Rejection or Investigate More
     else:
-        new_status = "rejected"
-        updated = update_proposal_status(
-            proposal_id=proposal_id,
-            new_status=new_status,
-            decision_by=analyst_id,
-            db_path=db_path
-        )
+        updated = get_proposal(proposal_id, db_path)
 
         log_audit_event(
             actor=analyst_id,

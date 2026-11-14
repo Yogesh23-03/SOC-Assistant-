@@ -150,7 +150,7 @@ class TestBackendAPIHandlers(unittest.TestCase):
         from backend.app import login_analyst
         from backend.schemas import LoginRequest
         req = LoginRequest(analyst_id="analyst_test_01")
-        res = login_analyst(req)
+        res = login_analyst(req, analyst_id=req.analyst_id)
         self.assertEqual(res.analyst_id, "analyst_test_01")
         self.assertEqual(res.token_type, "bearer")
         self.assertTrue(len(res.access_token) > 20)
@@ -200,8 +200,13 @@ class TestBackendAPIHandlers(unittest.TestCase):
         token_data = generate_signed_approval_token(proposal, nonce="nonce-api-exec-01")
         token_schema = SignedApprovalTokenSchema(**token_data)
 
-        # Apply action
-        result = run_coro(apply_containment_action(token=token_schema))
+        from backend.storage import save_proposal, update_proposal_status
+        save_proposal(proposal["proposal_id"], "alert", proposal["action"], proposal["target"], "test",
+                      ttl_seconds=1800, expires_at=proposal["expires_at"])
+        update_proposal_status(proposal["proposal_id"], "approved", "tester")
+        # Mock only the OS boundary; verify real executor persistence.
+        with patch("backend.executor.apply_iptables_block", return_value=(True, "applied")):
+            result = run_coro(apply_containment_action(token=token_schema))
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["target"], "198.51.100.105")
 
@@ -221,7 +226,12 @@ class TestBackendAPIHandlers(unittest.TestCase):
             "host": "srv-web",
             "severity": "medium",
         }
-        res = run_coro(ingest_alert(alert=raw_alert))
+        import asyncio
+        with patch("backend.ingest.run_pipeline", return_value={
+            "verdict": {"label": "suspicious", "confidence": 0, "reasoning": "offline test"},
+            "findings": [], "proposal": None,
+        }):
+            res = asyncio.run(ingest_alert(alert=raw_alert))
         self.assertIn("status", res)
         self.assertIn("verdict", res)
         self.assertEqual(res["alert_id"], "API-ALERT-01")

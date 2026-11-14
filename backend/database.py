@@ -135,3 +135,25 @@ def init_db(db_path: Optional[str] = None) -> None:
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_blocks_status ON active_blocks(status);")
+
+        # Durable case history and resumable analyst review requests.
+        conn.execute("""CREATE TABLE IF NOT EXISTS case_runs (
+            run_id TEXT PRIMARY KEY, alert_id TEXT NOT NULL, alert_json TEXT NOT NULL,
+            result_json TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL,
+            finished_at TEXT, error TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_case_runs_alert ON case_runs(alert_id, started_at)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS tool_observations (
+            observation_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
+            alert_id TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL,
+            result_json TEXT NOT NULL, created_at TEXT NOT NULL
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS investigation_jobs (
+            proposal_id TEXT PRIMARY KEY, alert_id TEXT NOT NULL, analyst_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL,
+            finished_at TEXT, error TEXT
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS intel_cache (
+            provider TEXT NOT NULL, indicator TEXT NOT NULL, payload TEXT NOT NULL,
+            fetched_at REAL NOT NULL, PRIMARY KEY(provider, indicator)
+        )""")

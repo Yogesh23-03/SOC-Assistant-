@@ -4,11 +4,14 @@ Handles database paths, security tokens, CORS origins, and system safety default
 """
 
 import os
+from dotenv import load_dotenv
 from pathlib import Path
 from typing import List
 
 # Base directory of the SOC-Assistant- repository
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
 
 # Database configuration
 # Default SQLite path inside data/ directory
@@ -21,9 +24,9 @@ SERVER_PORT = int(os.getenv("SOC_SERVER_PORT", "8000"))
 
 # Cryptographic secrets (In production/demo, provide via environment variables)
 # HMAC secret used by Backend to sign approval tokens, verified by the Executor script
-HMAC_SECRET_KEY = os.getenv("SOC_HMAC_SECRET", "soc-insecure-dev-hmac-key-change-in-production")
+HMAC_SECRET_KEY = os.getenv("SOC_HMAC_SECRET", "")
 # JWT secret for Analyst session tokens issued to the Chrome/Edge extension
-JWT_SECRET_KEY = os.getenv("SOC_JWT_SECRET", "soc-insecure-dev-jwt-key-change-in-production")
+JWT_SECRET_KEY = os.getenv("SOC_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = int(os.getenv("SOC_JWT_EXPIRATION_MINUTES", "120"))
 
@@ -49,3 +52,7 @@ PROTECTED_ALLOWLIST = [
     "127.0.0.1",     # Localhost loopback
     "10.0.0.254",    # Default gateway / router
 ]
+
+for name, value in (("SOC_HMAC_SECRET", HMAC_SECRET_KEY), ("SOC_JWT_SECRET", JWT_SECRET_KEY)):
+    if not value.strip() or value.startswith("soc-insecure-dev-"):
+        raise RuntimeError(f"Set {name} to a private random secret before starting the backend")

@@ -18,6 +18,13 @@ export function applyEvent(state: State, event: SocEvent): State {
       ...previous, ...patch, findings: patch.findings ?? previous.findings,
       closed: event.event_type === 'case.closed' || previous.closed,
     };
+  } else if (id.success && ['report.ready', 'case.investigating', 'case.review_failed'].includes(event.event_type)) {
+    const previous = next.cases[id.data.alert_id] ?? caseSchema.parse({ alert_id: id.data.alert_id });
+    next.cases[id.data.alert_id] = { ...previous,
+      report_ready: event.event_type === 'report.ready' || previous.report_ready,
+      investigating: event.event_type === 'case.investigating',
+      review_failed: event.event_type === 'case.review_failed',
+    };
   } else if (event.event_type === 'proposal.updated') {
     const parsed = proposalSchema.safeParse(event.payload);
     if (!parsed.success) return next;

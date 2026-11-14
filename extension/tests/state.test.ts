@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyState, proposalSchema, settingsSchema } from '../src/contracts';
+import { emptyState, proposalSchema, settingsSchema, commandSchema } from '../src/contracts';
 import { applyEvent, pendingProposals, reconcilePending } from '../src/state';
 
 const proposal = proposalSchema.parse({ proposal_id: 'p1', alert_id: 'a1', action: 'block_ip', target: '203.0.113.5', reason: 'Repeated failed logins', status: 'pending', confidence: .9, ttl_seconds: 3600, created_at: '2026-01-01T00:00:00Z', expires_at: '2099-01-01T00:00:00Z' });
@@ -51,5 +51,23 @@ describe('backend restrictions', () => {
   });
   it.each(['http://localhost:8000', 'http://127.0.0.1:8000', 'https://soc-backend.lab.local'])('accepts %s', backend => {
     expect(settingsSchema.safeParse({ backend, notifications: true }).success).toBe(true);
+  });
+});
+
+
+describe('authenticated review and report state', () => {
+  it('requires an actual session token for login', () => {
+    expect(commandSchema.safeParse({ type: 'login', analyst_id: 'analyst.demo' }).success).toBe(false);
+    expect(commandSchema.safeParse({ type: 'login', access_token: 'short' }).success).toBe(false);
+    expect(commandSchema.safeParse({ type: 'login', access_token: 'valid-long-session-token' }).success).toBe(true);
+  });
+  it('tracks review failure and report readiness without executing anything', () => {
+    const reviewing = applyEvent(emptyState(), { event_id: 1, event_type: 'case.investigating', payload: { alert_id: 'a1' }, created_at: '' });
+    expect(reviewing.cases.a1.investigating).toBe(true);
+    const failed = applyEvent(reviewing, { event_id: 2, event_type: 'case.review_failed', payload: { alert_id: 'a1' }, created_at: '' });
+    expect(failed.cases.a1.review_failed).toBe(true);
+    const report = applyEvent(failed, { event_id: 3, event_type: 'report.ready', payload: { alert_id: 'a1' }, created_at: '' });
+    expect(report.cases.a1.report_ready).toBe(true);
+    expect(Object.keys(report.proposals)).toHaveLength(0);
   });
 });

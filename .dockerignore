@@ -1,0 +1,11 @@
+.git
+.env
+.venv
+.test-deps
+hermes-agent
+.agents
+extension/node_modules
+extension/test-results
+data/*.sqlite*
+__pycache__
+.pytest_cache

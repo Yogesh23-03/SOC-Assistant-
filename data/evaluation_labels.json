@@ -1,0 +1,5 @@
+{
+  "A-001": "true_attack", "A-002": "false_positive", "A-003": "suspicious",
+  "A-004": "true_attack", "A-005": "false_positive", "A-006": "true_attack",
+  "A-007": "suspicious", "A-008": "true_attack", "A-009": "false_positive", "A-010": "true_attack"
+}

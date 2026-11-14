@@ -1,0 +1,43 @@
+name: Project checks
+on: [push, pull_request]
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    env:
+      SOC_HMAC_SECRET: ci-only-randomize-in-production-hmac
+      SOC_JWT_SECRET: ci-only-randomize-in-production-session
+      GROQ_API_KEY: offline-only
+      GROQ_MODEL: offline-only
+      SOC_EXECUTE_ON_APPROVAL: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests backend/tests
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m venv ../.venv && ../.venv/bin/pip install -r ../requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run package
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soc-assistant-extension
+          path: extension/soc-assistant-extension.zip

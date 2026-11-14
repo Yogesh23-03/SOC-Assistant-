@@ -24,7 +24,7 @@ M1 and M2 are implemented in previous commits. M3 is a narrow browser side panel
 
 ## Capabilities and Constraints
 
-Recover pending proposals after service-worker shutdown, render hostile logs as plain text, keep provider keys out of the extension, and retain only a short-lived analyst token in browser session storage. The extension never calls the executor. Current M2 approval authorizes execution but does not apply rules; investigate_more currently rejects the proposal without rerunning agents. These limitations must remain explicit.
+Recover pending proposals after service-worker shutdown, render hostile logs as plain text, keep provider keys out of the extension, and retain only a short-lived analyst token in browser session storage. The extension never calls the executor. Approval authorizes execution; Linux deployments can explicitly enable backend execution on approval. Investigate more queues fresh analysis and a new proposal. Durable case reports support PDF export. Actual VM execution and browser-profile recovery still require manual acceptance.
 
 ## Brand Commitments
 

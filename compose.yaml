@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: .
+    env_file: .env
+    environment:
+      SOC_DATABASE_PATH: /data/soc.sqlite
+      SOC_EXECUTE_ON_APPROVAL: "false"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - soc-data:/data
+    restart: unless-stopped
+  proxy:
+    image: caddy:2
+    ports:
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+volumes:
+  soc-data:
+  caddy-data:
+  caddy-config:

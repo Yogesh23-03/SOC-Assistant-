@@ -8,6 +8,8 @@ prose), and stored per alert in a plain dict that can be swapped for a database.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Callable
 
 from agents import prompts
@@ -49,6 +51,22 @@ def _summarise(tool: str, result: dict) -> str:
     )[:1000]
 
 
+_tool_observer = ContextVar("soc_tool_observer", default=None)
+_tool_runner = ContextVar("soc_tool_runner", default=None)
+
+
+@contextmanager
+def tool_context(observer=None, runner=None):
+    """Request-local audit/provider adapters; ordinary M1 use remains read-only."""
+    observer_token = _tool_observer.set(observer)
+    runner_token = _tool_runner.set(runner)
+    try:
+        yield
+    finally:
+        _tool_observer.reset(observer_token)
+        _tool_runner.reset(runner_token)
+
+
 def _call_tool(name: str, raw_arguments: str) -> dict:
     """Validate one model request and run it. Only INVESTIGATION_TOOLS may run."""
     if name not in INVESTIGATION_TOOLS:
@@ -60,7 +78,7 @@ def _call_tool(name: str, raw_arguments: str) -> dict:
     ip = arguments.get("ip") if isinstance(arguments, dict) else None
     if not isinstance(ip, str) or not ip.strip():
         return {"ok": False, "error": "missing 'ip'"}
-    return json.loads(readonly.run_tool(name, ip))
+    return json.loads((_tool_runner.get() or readonly.run_tool)(name, ip))
 
 
 def _assistant_echo(reply: Any) -> dict:
@@ -119,6 +137,9 @@ def investigate(
             attempts += 1
             name = call.function.name
             result = _call_tool(name, call.function.arguments)
+            observer = _tool_observer.get()
+            if observer:
+                observer(name, str(call.function.arguments or "")[:512], result)
             messages.append(
                 {
                     "role": "tool",

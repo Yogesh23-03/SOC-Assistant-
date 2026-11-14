@@ -7,3 +7,9 @@ hermes-agent/
 
 # Local pstack skill installs (t3-pstack) - machine-only, never commit
 .agents/
+
+.test-deps/
+
+# Local SQLite runtime state
+data/*.sqlite-wal
+data/*.sqlite-shm

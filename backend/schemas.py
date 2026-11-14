@@ -55,7 +55,7 @@ class ProposalResponse(BaseModel):
     target: str
     reason: str
     explanation: Optional[str] = None
-    status: Literal["pending", "approved", "rejected", "expired"]
+    status: Literal["pending", "approved", "rejected", "expired", "investigating"]
     confidence: float
     ttl_seconds: int
     created_at: str
